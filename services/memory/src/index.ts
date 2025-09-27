@@ -4,17 +4,94 @@ import helmet from 'helmet';
 import compression from 'compression';
 import rateLimit from 'express-rate-limit';
 import dotenv from 'dotenv';
+import { v4 as uuidv4 } from 'uuid';
 
-import { logger } from './utils/logger';
-import { initializeDatabase, closeDatabase } from './config/database';
-import memoryRoutes from './routes/memory';
-import stateRoutes from './routes/state';
-
-// Load environment variables
 dotenv.config();
 
 const app = express();
 const PORT = process.env.PORT || 3003;
+
+// In-memory storage for demonstration
+interface Memory {
+  id: string;
+  content: string;
+  type: 'short_term' | 'long_term' | 'episodic' | 'semantic' | 'procedural' | 'working';
+  importance: number;
+  tags: string[];
+  createdAt: Date;
+  updatedAt: Date;
+  accessCount: number;
+  expiresAt?: Date;
+  metadata: Record<string, any>;
+}
+
+interface State {
+  id: string;
+  name: string;
+  data: any;
+  version: number;
+  createdAt: Date;
+  updatedAt: Date;
+  isActive: boolean;
+}
+
+// In-memory stores
+const memories = new Map<string, Memory>();
+const states = new Map<string, State>();
+
+// Initialize sample data
+const initializeSampleData = () => {
+  const sampleMemories: Memory[] = [
+    {
+      id: uuidv4(),
+      content: 'User preferences for dark mode theme',
+      type: 'long_term',
+      importance: 0.8,
+      tags: ['preferences', 'ui', 'theme'],
+      createdAt: new Date(Date.now() - 86400000 * 7),
+      updatedAt: new Date(Date.now() - 86400000 * 2),
+      accessCount: 15,
+      metadata: { category: 'user_preference', source: 'settings_ui' }
+    },
+    {
+      id: uuidv4(),
+      content: 'Last performed action: file upload',
+      type: 'short_term',
+      importance: 0.6,
+      tags: ['action', 'file', 'upload'],
+      createdAt: new Date(Date.now() - 3600000),
+      updatedAt: new Date(Date.now() - 1800000),
+      accessCount: 3,
+      expiresAt: new Date(Date.now() + 86400000),
+      metadata: { category: 'recent_action', fileSize: '2.3MB' }
+    }
+  ];
+
+  sampleMemories.forEach(memory => memories.set(memory.id, memory));
+
+  const sampleStates: State[] = [
+    {
+      id: uuidv4(),
+      name: 'user_session',
+      data: { userId: 'user-001', sessionId: 'sess-123', isAuthenticated: true },
+      version: 1,
+      createdAt: new Date(Date.now() - 1800000),
+      updatedAt: new Date(),
+      isActive: true
+    },
+    {
+      id: uuidv4(),
+      name: 'application_config',
+      data: { apiVersion: '1.0.0', features: ['ai_chat', 'file_upload', 'analytics'] },
+      version: 3,
+      createdAt: new Date(Date.now() - 86400000 * 30),
+      updatedAt: new Date(Date.now() - 86400000 * 5),
+      isActive: true
+    }
+  ];
+
+  sampleStates.forEach(state => states.set(state.id, state));
+};
 
 // Security middleware
 app.use(helmet());
@@ -25,8 +102,8 @@ app.use(cors({
 
 // Rate limiting
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 1000, // Limit each IP to 1000 requests per windowMs
+  windowMs: 15 * 60 * 1000,
+  max: 1000,
   message: 'Too many requests from this IP, please try again later.'
 });
 app.use(limiter);
@@ -38,11 +115,7 @@ app.use(express.urlencoded({ extended: true }));
 
 // Request logging
 app.use((req, res, next) => {
-  logger.info(`${req.method} ${req.path}`, {
-    ip: req.ip,
-    userAgent: req.get('User-Agent'),
-    timestamp: new Date().toISOString()
-  });
+  console.log(`${new Date().toISOString()} - ${req.method} ${req.path}`);
   next();
 });
 
@@ -53,18 +126,259 @@ app.get('/health', (req, res) => {
     service: 'memory',
     timestamp: new Date().toISOString(),
     version: '1.0.0',
-    environment: process.env.NODE_ENV || 'development'
+    environment: process.env.NODE_ENV || 'development',
+    metrics: {
+      totalMemories: memories.size,
+      totalStates: states.size,
+      memoryTypes: {
+        short_term: Array.from(memories.values()).filter(m => m.type === 'short_term').length,
+        long_term: Array.from(memories.values()).filter(m => m.type === 'long_term').length,
+        episodic: Array.from(memories.values()).filter(m => m.type === 'episodic').length,
+        semantic: Array.from(memories.values()).filter(m => m.type === 'semantic').length,
+        procedural: Array.from(memories.values()).filter(m => m.type === 'procedural').length,
+        working: Array.from(memories.values()).filter(m => m.type === 'working').length
+      }
+    }
   });
 });
 
-// API routes
-app.use('/memory', memoryRoutes);
-app.use('/state', stateRoutes);
+// Memory endpoints
+app.get('/memories', (req, res) => {
+  const memoryList = Array.from(memories.values());
+  const { type, tag, minImportance } = req.query;
 
-// Time fork routes (basic implementation)
-app.get('/forks', (req, res) => {
-  // TODO: Implement time fork functionality
-  res.json({ forks: [], message: 'Time fork functionality coming soon' });
+  let filtered = memoryList;
+  if (type) filtered = filtered.filter(m => m.type === type);
+  if (tag) filtered = filtered.filter(m => m.tags.includes(tag as string));
+  if (minImportance) {
+    const threshold = parseFloat(minImportance as string);
+    filtered = filtered.filter(m => m.importance >= threshold);
+  }
+
+  // Sort by importance and recency
+  filtered.sort((a, b) => {
+    const importanceScore = b.importance - a.importance;
+    if (Math.abs(importanceScore) < 0.1) {
+      return b.updatedAt.getTime() - a.updatedAt.getTime();
+    }
+    return importanceScore;
+  });
+
+  res.json({
+    memories: filtered,
+    total: filtered.length,
+    summary: {
+      byType: {
+        short_term: memoryList.filter(m => m.type === 'short_term').length,
+        long_term: memoryList.filter(m => m.type === 'long_term').length,
+        episodic: memoryList.filter(m => m.type === 'episodic').length,
+        semantic: memoryList.filter(m => m.type === 'semantic').length,
+        procedural: memoryList.filter(m => m.type === 'procedural').length,
+        working: memoryList.filter(m => m.type === 'working').length
+      },
+      averageImportance: memoryList.reduce((sum, m) => sum + m.importance, 0) / memoryList.length || 0
+    }
+  });
+});
+
+app.post('/memories', (req, res) => {
+  const { content, type, importance, tags, expiresIn, metadata } = req.body;
+
+  if (!content || !type) {
+    return res.status(400).json({ error: 'Missing required fields: content, type' });
+  }
+
+  const memory: Memory = {
+    id: uuidv4(),
+    content,
+    type,
+    importance: importance || 0.5,
+    tags: tags || [],
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    accessCount: 0,
+    expiresAt: expiresIn ? new Date(Date.now() + expiresIn * 1000) : undefined,
+    metadata: metadata || {}
+  };
+
+  memories.set(memory.id, memory);
+  res.status(201).json(memory);
+});
+
+app.get('/memories/:id', (req, res) => {
+  const memory = memories.get(req.params.id);
+  if (!memory) {
+    return res.status(404).json({ error: 'Memory not found' });
+  }
+
+  // Update access count
+  memory.accessCount++;
+  memory.updatedAt = new Date();
+  memories.set(memory.id, memory);
+
+  res.json(memory);
+});
+
+app.put('/memories/:id', (req, res) => {
+  const memory = memories.get(req.params.id);
+  if (!memory) {
+    return res.status(404).json({ error: 'Memory not found' });
+  }
+
+  const { content, importance, tags, metadata } = req.body;
+
+  if (content !== undefined) memory.content = content;
+  if (importance !== undefined) memory.importance = importance;
+  if (tags !== undefined) memory.tags = tags;
+  if (metadata !== undefined) memory.metadata = { ...memory.metadata, ...metadata };
+
+  memory.updatedAt = new Date();
+  memories.set(memory.id, memory);
+
+  res.json(memory);
+});
+
+app.delete('/memories/:id', (req, res) => {
+  const deleted = memories.delete(req.params.id);
+  if (!deleted) {
+    return res.status(404).json({ error: 'Memory not found' });
+  }
+  res.status(204).send();
+});
+
+// State management endpoints
+app.get('/states', (req, res) => {
+  const stateList = Array.from(states.values());
+  const { active } = req.query;
+
+  let filtered = stateList;
+  if (active === 'true') filtered = filtered.filter(s => s.isActive);
+
+  res.json({
+    states: filtered,
+    total: filtered.length
+  });
+});
+
+app.post('/states', (req, res) => {
+  const { name, data } = req.body;
+
+  if (!name || !data) {
+    return res.status(400).json({ error: 'Missing required fields: name, data' });
+  }
+
+  const state: State = {
+    id: uuidv4(),
+    name,
+    data,
+    version: 1,
+    createdAt: new Date(),
+    updatedAt: new Date(),
+    isActive: true
+  };
+
+  states.set(state.id, state);
+  res.status(201).json(state);
+});
+
+app.get('/states/:id', (req, res) => {
+  const state = states.get(req.params.id);
+  if (!state) {
+    return res.status(404).json({ error: 'State not found' });
+  }
+  res.json(state);
+});
+
+app.put('/states/:id', (req, res) => {
+  const state = states.get(req.params.id);
+  if (!state) {
+    return res.status(404).json({ error: 'State not found' });
+  }
+
+  const { data, isActive } = req.body;
+
+  if (data !== undefined) {
+    state.data = data;
+    state.version++;
+  }
+  if (isActive !== undefined) state.isActive = isActive;
+
+  state.updatedAt = new Date();
+  states.set(state.id, state);
+
+  res.json(state);
+});
+
+app.delete('/states/:id', (req, res) => {
+  const deleted = states.delete(req.params.id);
+  if (!deleted) {
+    return res.status(404).json({ error: 'State not found' });
+  }
+  res.status(204).send();
+});
+
+// Memory consolidation endpoint
+app.post('/memories/consolidate', (req, res) => {
+  const { fromType, toType, threshold } = req.body;
+
+  if (!fromType || !toType) {
+    return res.status(400).json({ error: 'Missing required fields: fromType, toType' });
+  }
+
+  const consolidationThreshold = threshold || 0.8;
+  const candidateMemories = Array.from(memories.values())
+    .filter(m => m.type === fromType && m.importance >= consolidationThreshold);
+
+  let consolidatedCount = 0;
+  candidateMemories.forEach(memory => {
+    memory.type = toType;
+    memory.updatedAt = new Date();
+    memories.set(memory.id, memory);
+    consolidatedCount++;
+  });
+
+  res.json({
+    success: true,
+    consolidatedCount,
+    fromType,
+    toType,
+    threshold: consolidationThreshold
+  });
+});
+
+// Search memories
+app.get('/memories/search', (req, res) => {
+  const { q, type, limit } = req.query;
+
+  if (!q) {
+    return res.status(400).json({ error: 'Search query is required' });
+  }
+
+  const query = (q as string).toLowerCase();
+  const searchLimit = limit ? parseInt(limit as string) : 50;
+
+  let results = Array.from(memories.values()).filter(memory => {
+    const contentMatch = memory.content.toLowerCase().includes(query);
+    const tagMatch = memory.tags.some(tag => tag.toLowerCase().includes(query));
+    const typeMatch = !type || memory.type === type;
+
+    return (contentMatch || tagMatch) && typeMatch;
+  });
+
+  // Sort by relevance (importance + recency)
+  results.sort((a, b) => {
+    const aScore = a.importance + (a.accessCount / 100);
+    const bScore = b.importance + (b.accessCount / 100);
+    return bScore - aScore;
+  });
+
+  results = results.slice(0, searchLimit);
+
+  res.json({
+    query,
+    results,
+    total: results.length
+  });
 });
 
 // Root endpoint
@@ -75,22 +389,24 @@ app.get('/', (req, res) => {
     description: 'Memory and State Management Service',
     endpoints: {
       health: '/health',
-      memory: '/memory',
-      state: '/state',
-      forks: '/forks'
-    }
+      memories: '/memories',
+      states: '/states',
+      search: '/memories/search',
+      consolidate: '/memories/consolidate'
+    },
+    capabilities: [
+      'multi-type-memory-storage',
+      'state-management',
+      'memory-consolidation',
+      'search-and-retrieval',
+      'importance-scoring'
+    ]
   });
 });
 
 // Error handling middleware
 app.use((err: any, req: express.Request, res: express.Response, next: express.NextFunction) => {
-  logger.error('Unhandled error:', {
-    error: err.message,
-    stack: err.stack,
-    url: req.url,
-    method: req.method
-  });
-
+  console.error('Unhandled error:', err);
   res.status(err.status || 500).json({
     error: process.env.NODE_ENV === 'production' ? 'Internal server error' : err.message
   });
@@ -108,68 +424,46 @@ app.use('*', (req, res) => {
 // Start server
 async function startServer() {
   try {
-    // Initialize database connections
-    await initializeDatabase();
+    // Initialize sample data
+    initializeSampleData();
 
     // Start HTTP server
     const server = app.listen(PORT, () => {
-      logger.info(`Memory Service running on port ${PORT}`);
-      logger.info(`Environment: ${process.env.NODE_ENV || 'development'}`);
-      logger.info('Service endpoints available:');
-      logger.info(`  Health: http://localhost:${PORT}/health`);
-      logger.info(`  Memory: http://localhost:${PORT}/memory`);
-      logger.info(`  State: http://localhost:${PORT}/state`);
+      console.log(`Memory Service running on port ${PORT}`);
+      console.log(`Environment: ${process.env.NODE_ENV || 'development'}`);
+      console.log('Service endpoints available:');
+      console.log(`  Health: http://localhost:${PORT}/health`);
+      console.log(`  Memories: http://localhost:${PORT}/memories`);
+      console.log(`  States: http://localhost:${PORT}/states`);
     });
 
     // Graceful shutdown
     const shutdown = async (signal: string) => {
-      logger.info(`Received ${signal}. Starting graceful shutdown...`);
-
-      server.close(async () => {
-        logger.info('HTTP server closed');
-
-        try {
-          await closeDatabase();
-          logger.info('Database connections closed');
-          process.exit(0);
-        } catch (error) {
-          logger.error('Error during shutdown:', error);
-          process.exit(1);
-        }
+      console.log(`Received ${signal}. Starting graceful shutdown...`);
+      server.close(() => {
+        console.log('HTTP server closed');
+        process.exit(0);
       });
 
-      // Force close after 30 seconds
       setTimeout(() => {
-        logger.error('Could not close connections in time, forcefully shutting down');
+        console.error('Could not close connections in time, forcefully shutting down');
         process.exit(1);
       }, 30000);
     };
 
-    // Handle shutdown signals
     process.on('SIGTERM', () => shutdown('SIGTERM'));
     process.on('SIGINT', () => shutdown('SIGINT'));
 
-    // Handle uncaught exceptions
-    process.on('uncaughtException', (error) => {
-      logger.error('Uncaught Exception:', error);
-      shutdown('uncaughtException');
-    });
-
-    process.on('unhandledRejection', (reason, promise) => {
-      logger.error('Unhandled Rejection at:', promise, 'reason:', reason);
-      shutdown('unhandledRejection');
-    });
-
   } catch (error) {
-    logger.error('Failed to start Memory Service:', error);
+    console.error('Failed to start Memory Service:', error);
     process.exit(1);
   }
 }
 
-// Auto-register with API Gateway (if available)
+// Auto-register with API Gateway
 async function registerWithGateway() {
   if (!process.env.GATEWAY_URL) {
-    logger.info('No gateway URL configured, skipping registration');
+    console.log('No gateway URL configured, skipping registration');
     return;
   }
 
@@ -185,16 +479,15 @@ async function registerWithGateway() {
     };
 
     await axios.post(`${process.env.GATEWAY_URL}/register`, registration);
-    logger.info(`Registered with API Gateway at ${process.env.GATEWAY_URL}`);
+    console.log(`Registered with API Gateway at ${process.env.GATEWAY_URL}`);
 
   } catch (error) {
-    logger.error('Failed to register with API Gateway:', error);
+    console.error('Failed to register with API Gateway:', error);
   }
 }
 
 // Start the service
 startServer().then(() => {
-  // Register with gateway after startup
   setTimeout(registerWithGateway, 5000);
 });
 

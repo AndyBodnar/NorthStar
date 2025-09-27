@@ -1,0 +1,48 @@
+{
+  "name": "@north-star/truth",
+  "version": "1.0.0",
+  "description": "Truth and Data Integrity Service for North Star constellation",
+  "main": "dist/index.js",
+  "scripts": {
+    "dev": "nodemon --exec ts-node src/index.ts",
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "jest",
+    "lint": "eslint src/**/*.ts",
+    "type-check": "tsc --noEmit",
+    "clean": "rimraf dist"
+  },
+  "dependencies": {
+    "@north-star/shared-types": "*",
+    "express": "^4.18.0",
+    "cors": "^2.8.5",
+    "helmet": "^7.0.0",
+    "compression": "^1.7.4",
+    "express-rate-limit": "^7.0.0",
+    "joi": "^17.9.0",
+    "redis": "^4.6.0",
+    "pg": "^8.11.0",
+    "winston": "^3.10.0",
+    "dotenv": "^16.3.0",
+    "uuid": "^9.0.0",
+    "express-validator": "^7.0.0",
+    "swagger-ui-express": "^5.0.0",
+    "yamljs": "^0.3.0"
+  },
+  "devDependencies": {
+    "@types/express": "^4.17.0",
+    "@types/cors": "^2.8.0",
+    "@types/compression": "^1.7.0",
+    "@types/pg": "^8.10.0",
+    "@types/uuid": "^9.0.0",
+    "@types/swagger-ui-express": "^4.1.0",
+    "@types/yamljs": "^0.2.0",
+    "typescript": "^5.0.0",
+    "ts-node": "^10.9.0",
+    "nodemon": "^3.0.0",
+    "jest": "^29.0.0",
+    "@types/jest": "^29.0.0",
+    "ts-jest": "^29.0.0",
+    "rimraf": "^5.0.0"
+  }
+}

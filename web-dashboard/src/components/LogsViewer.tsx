@@ -16,6 +16,7 @@ import {
   CheckCircle,
   Clock
 } from 'lucide-react'
+import { apiClient } from '@/lib/api'
 
 interface LogEntry {
   id: string
@@ -132,20 +133,20 @@ export function LogsViewer() {
     }
   }
 
-  const exportLogs = () => {
-    const logsText = filteredLogs.map(log =>
-      `[${log.timestamp.toISOString()}] [${log.level.toUpperCase()}] [${log.service}] ${log.message}`
-    ).join('\n')
-
-    const blob = new Blob([logsText], { type: 'text/plain' })
-    const url = URL.createObjectURL(blob)
-    const a = document.createElement('a')
-    a.href = url
-    a.download = `north-star-logs-${new Date().toISOString().split('T')[0]}.log`
-    document.body.appendChild(a)
-    a.click()
-    document.body.removeChild(a)
-    URL.revokeObjectURL(url)
+  const exportLogs = async () => {
+    try {
+      const blob = await apiClient.exportLogs()
+      const url = URL.createObjectURL(blob)
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `north-star-logs-${new Date().toISOString().split('T')[0]}.txt`
+      document.body.appendChild(a)
+      a.click()
+      document.body.removeChild(a)
+      URL.revokeObjectURL(url)
+    } catch (error) {
+      console.error('Failed to export logs:', error)
+    }
   }
 
   const clearLogs = () => {
