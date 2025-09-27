@@ -1,0 +1,265 @@
+version: '3.8'
+
+services:
+  # Infrastructure Services
+  postgres:
+    image: postgres:15-alpine
+    environment:
+      POSTGRES_DB: north_star
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./scripts/init-db.sql:/docker-entrypoint-initdb.d/init-db.sql
+    networks:
+      - north-star
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - north-star
+
+  # API Gateway
+  api-gateway:
+    build:
+      context: ./services/api-gateway
+      dockerfile: Dockerfile
+    ports:
+      - "3000:3000"
+    environment:
+      - NODE_ENV=development
+      - PORT=3000
+      - JWT_SECRET=dev-secret-key
+      - IDENTITY_SERVICE_URL=http://identity:3001
+      - MEMORY_SERVICE_URL=http://memory:3002
+      - SENSING_SERVICE_URL=http://sensing:3003
+      - GENERATION_SERVICE_URL=http://generation:3004
+      - INTERACTION_SERVICE_URL=http://interaction:3005
+      - AUTONOMY_SERVICE_URL=http://autonomy:3006
+      - TRUTH_SERVICE_URL=http://truth:3007
+      - ECONOMY_SERVICE_URL=http://economy:3008
+      - GOVERNANCE_SERVICE_URL=http://governance:3009
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - north-star
+    volumes:
+      - ./services/api-gateway:/app
+      - /app/node_modules
+
+  # Core Services
+  identity:
+    build:
+      context: ./services/identity
+      dockerfile: Dockerfile
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=development
+      - PORT=3001
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/north_star
+      - REDIS_URL=redis://redis:6379
+      - JWT_SECRET=dev-secret-key
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - north-star
+    volumes:
+      - ./services/identity:/app
+      - /app/node_modules
+
+  memory:
+    build:
+      context: ./services/memory
+      dockerfile: Dockerfile
+    ports:
+      - "3002:3002"
+    environment:
+      - NODE_ENV=development
+      - PORT=3002
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/north_star
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - north-star
+    volumes:
+      - ./services/memory:/app
+      - /app/node_modules
+
+  sensing:
+    build:
+      context: ./services/sensing
+      dockerfile: Dockerfile
+    ports:
+      - "3003:3003"
+    environment:
+      - NODE_ENV=development
+      - PORT=3003
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/north_star
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - north-star
+    volumes:
+      - ./services/sensing:/app
+      - /app/node_modules
+
+  generation:
+    build:
+      context: ./services/generation
+      dockerfile: Dockerfile
+    ports:
+      - "3004:3004"
+    environment:
+      - NODE_ENV=development
+      - PORT=3004
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/north_star
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - north-star
+    volumes:
+      - ./services/generation:/app
+      - /app/node_modules
+
+  interaction:
+    build:
+      context: ./services/interaction
+      dockerfile: Dockerfile
+    ports:
+      - "3005:3005"
+    environment:
+      - NODE_ENV=development
+      - PORT=3005
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/north_star
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - north-star
+    volumes:
+      - ./services/interaction:/app
+      - /app/node_modules
+
+  autonomy:
+    build:
+      context: ./services/autonomy
+      dockerfile: Dockerfile
+    ports:
+      - "3006:3006"
+    environment:
+      - NODE_ENV=development
+      - PORT=3006
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/north_star
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - north-star
+    volumes:
+      - ./services/autonomy:/app
+      - /app/node_modules
+
+  truth:
+    build:
+      context: ./services/truth
+      dockerfile: Dockerfile
+    ports:
+      - "3007:3007"
+    environment:
+      - NODE_ENV=development
+      - PORT=3007
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/north_star
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - north-star
+    volumes:
+      - ./services/truth:/app
+      - /app/node_modules
+
+  economy:
+    build:
+      context: ./services/economy
+      dockerfile: Dockerfile
+    ports:
+      - "3008:3008"
+    environment:
+      - NODE_ENV=development
+      - PORT=3008
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/north_star
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - north-star
+    volumes:
+      - ./services/economy:/app
+      - /app/node_modules
+
+  governance:
+    build:
+      context: ./services/governance
+      dockerfile: Dockerfile
+    ports:
+      - "3009:3009"
+    environment:
+      - NODE_ENV=development
+      - PORT=3009
+      - DATABASE_URL=postgresql://postgres:postgres@postgres:5432/north_star
+      - REDIS_URL=redis://redis:6379
+    depends_on:
+      - postgres
+      - redis
+    networks:
+      - north-star
+    volumes:
+      - ./services/governance:/app
+      - /app/node_modules
+
+  # Web Dashboard
+  web-dashboard:
+    build:
+      context: ./web-dashboard
+      dockerfile: Dockerfile
+    ports:
+      - "4000:4000"
+    environment:
+      - NODE_ENV=development
+      - PORT=4000
+      - NEXT_PUBLIC_API_URL=http://localhost:3000
+    depends_on:
+      - api-gateway
+    networks:
+      - north-star
+    volumes:
+      - ./web-dashboard:/app
+      - /app/node_modules
+      - /app/.next
+
+volumes:
+  postgres_data:
+  redis_data:
+
+networks:
+  north-star:
+    driver: bridge
